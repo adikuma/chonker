@@ -1,0 +1,9 @@
+{
+  "hooks": [
+    {
+      "event": "SessionStart",
+      "command": "python ${CLAUDE_PLUGIN_ROOT}/hooks/setup_statusline.py",
+      "timeout": 10000
+    }
+  ]
+}

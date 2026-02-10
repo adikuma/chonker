@@ -1,0 +1,6 @@
+{
+  "name": "chonker",
+  "version": "0.1.0",
+  "description": "real-time context window meter showing token usage, cost, and remaining capacity",
+  "hooks": "./hooks/hooks.json"
+}
