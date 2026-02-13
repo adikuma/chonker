@@ -2,7 +2,6 @@ import json
 import os
 import sys
 
-
 SETTINGS_PATH = os.path.join(os.path.expanduser("~"), ".claude", "settings.json")
 
 # absolute path to meter.py next to this script
@@ -29,7 +28,7 @@ def save_settings(settings):
 
 
 def desired_command():
-    return f"python {METER_PATH}"
+    return f'python "{METER_PATH}"'
 
 
 def needs_update(settings):
@@ -47,12 +46,15 @@ def main():
         return
 
     settings["statusLine"] = {
+        "type": "command",
         "command": desired_command(),
         "refreshInterval": REFRESH_INTERVAL,
     }
     save_settings(settings)
 
-    result = {"additionalContext": "chonker context meter installed and active on status line"}
+    result = {
+        "additionalContext": "chonker context meter installed and active on status line"
+    }
     print(json.dumps(result))
 
 

@@ -1,9 +1,16 @@
 {
-  "hooks": [
-    {
-      "event": "SessionStart",
-      "command": "python ${CLAUDE_PLUGIN_ROOT}/hooks/setup_statusline.py",
-      "timeout": 10000
-    }
-  ]
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python ${CLAUDE_PLUGIN_ROOT}/hooks/setup_statusline.py",
+            "timeout": 10000
+          }
+        ]
+      }
+    ]
+  }
 }
