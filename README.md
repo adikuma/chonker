@@ -10,7 +10,7 @@ Claude Code says 200K tokens but the real usable limit is somewhere around 70-12
 
 ## What it looks like
 
-![chonker meter](images/chonker.png)
+![chonker meter](images/chonker.png?v=2)
 
 ## Install
 
