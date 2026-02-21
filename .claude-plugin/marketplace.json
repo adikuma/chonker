@@ -1,0 +1,13 @@
+{
+  "name": "chonker",
+  "owner": {
+    "name": "adikuma"
+  },
+  "plugins": [
+    {
+      "name": "chonker",
+      "source": ".",
+      "description": "real-time context window meter showing token usage, rate limits, and remaining capacity"
+    }
+  ]
+}

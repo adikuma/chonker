@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python ${CLAUDE_PLUGIN_ROOT}/hooks/setup_statusline.py",
+            "command": "node ${CLAUDE_PLUGIN_ROOT}/hooks/setup_statusline.js",
             "timeout": 10000
           }
         ]

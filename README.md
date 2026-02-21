@@ -14,6 +14,17 @@ Claude Code says 200K tokens but the real usable limit is somewhere around 70-12
 
 ## Install
 
+### npm (recommended)
+
+```
+npm install -g @adikuma/chonker
+chonker
+```
+
+Restart Claude Code to see the meter.
+
+### dev
+
 ```
 claude --plugin-dir /path/to/chonker
 ```

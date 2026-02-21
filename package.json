@@ -1,0 +1,27 @@
+{
+  "name": "@adikuma/chonker",
+  "version": "1.0.0",
+  "description": "real-time context window meter for claude code",
+  "bin": {
+    "chonker": "bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "hooks/meter.js",
+    "hooks/setup_statusline.js",
+    "hooks/hooks.json",
+    ".claude-plugin/"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "context-window",
+    "token-usage",
+    "status-line"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/adikuma/chonker.git"
+  }
+}
