@@ -262,6 +262,19 @@ def render_usage_line(usage_data, cfg):
     return " " + dot.join(segments)
 
 
+def get_git_branch():
+    # reads .git/HEAD directly instead of spawning git process
+    try:
+        head_path = os.path.join(os.getcwd(), ".git", "HEAD")
+        with open(head_path, "r") as f:
+            head = f.read().strip()
+        if head.startswith("ref: refs/heads/"):
+            return head[16:]
+        return None
+    except (OSError, IOError):
+        return None
+
+
 # main render
 
 def render(data):
@@ -302,22 +315,24 @@ def render(data):
         fmt_tokens(window_size),
         RESET,
     )
-    line2 = dot.join(
-        [
-            " %s\u2191%s%s%s %s\u2193%s%s%s"
-            % (
-                dim,
-                RESET,
-                accent,
-                fmt_tokens(input_tok),
-                dim,
-                RESET,
-                accent,
-                fmt_tokens(output_tok),
-            ),
-            "%s%s%s" % (accent, model_short, RESET),
-        ]
-    )
+    branch = get_git_branch()
+    line2_parts = [
+        " %s\u2191%s%s%s %s\u2193%s%s%s"
+        % (
+            dim,
+            RESET,
+            accent,
+            fmt_tokens(input_tok),
+            dim,
+            RESET,
+            accent,
+            fmt_tokens(output_tok),
+        ),
+        "%s%s%s" % (accent, model_short, RESET),
+    ]
+    if branch:
+        line2_parts.append("%s@%s%s" % (dim, branch, RESET))
+    line2 = dot.join(line2_parts)
 
     usage_data = get_usage_data(cfg)
     line3 = render_usage_line(usage_data, cfg)

@@ -7,10 +7,11 @@ Claude Code says 200K tokens but the real usable limit is somewhere around 70-12
 - context window usage bar with percentage and token ratio
 - input and output tokens with model name
 - real time rate limit utilization (5 hour session, 7 day weekly, model specific, extra usage)
+- current git branch
 
 ## What it looks like
 
-![chonker meter](images/chonker.png?v=2)
+![chonker meter](images/chonker.png?v=3)
 
 ## Install
 

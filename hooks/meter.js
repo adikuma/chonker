@@ -3,6 +3,7 @@ const path = require("path");
 const os = require("os");
 const https = require("https");
 
+
 const RESET = "\x1b[0m";
 const CHONKER_DIR = path.join(os.homedir(), ".chonker");
 const CONFIG_PATH = path.join(CHONKER_DIR, "config.json");
@@ -250,6 +251,16 @@ function renderUsageLine(usageData, cfg) {
   return " " + segments.join(dot);
 }
 
+function getGitBranch() {
+  // reads .git/HEAD directly instead of spawning git process
+  try {
+    const head = fs.readFileSync(path.join(process.cwd(), ".git", "HEAD"), "utf-8").trim();
+    return head.startsWith("ref: refs/heads/") ? head.slice(16) : null;
+  } catch {
+    return null;
+  }
+}
+
 // main render
 
 async function render(data) {
@@ -281,10 +292,13 @@ async function render(data) {
   const dot = ` ${dim}\u00b7${RESET} `;
 
   const line1 = ` ${bar} ${barColor}${Math.round(pct)}%${RESET}  ${tokColor}${fmtTokens(currentTok)}/${fmtTokens(windowSize)}${RESET}`;
-  const line2 = [
+  const branch = getGitBranch();
+  const line2Parts = [
     ` ${dim}\u2191${RESET}${accent}${fmtTokens(inputTok)} ${dim}\u2193${RESET}${accent}${fmtTokens(outputTok)}`,
     `${accent}${modelShort}${RESET}`,
-  ].join(dot);
+  ];
+  if (branch) line2Parts.push(`${dim}@${branch}${RESET}`);
+  const line2 = line2Parts.join(dot);
 
   const usageData = await getUsageData(cfg);
   const line3 = renderUsageLine(usageData, cfg);
