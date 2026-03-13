@@ -9,6 +9,7 @@ const CHONKER_DIR = path.join(os.homedir(), ".chonker");
 const CONFIG_PATH = path.join(CHONKER_DIR, "config.json");
 const SESSION_PATH = path.join(CHONKER_DIR, "session.json");
 const USAGE_CACHE_PATH = path.join(CHONKER_DIR, "usage.json");
+const USAGE_GOOD_PATH = path.join(CHONKER_DIR, "usage_good.json");
 const CREDENTIALS_PATH = path.join(os.homedir(), ".claude", ".credentials.json");
 
 const USAGE_API_URL = "https://api.anthropic.com/api/oauth/usage";
@@ -18,9 +19,9 @@ const USAGE_API_HEADERS = {
   "anthropic-beta": "oauth-2025-04-20",
 };
 
-const CACHE_TTL_SECONDS = 60;
+const CACHE_TTL_SECONDS = 150;
 const API_TIMEOUT_SECONDS = 3;
-const CACHE_GRACE_SECONDS = 300;
+const CACHE_GRACE_SECONDS = 900;
 
 // 256 color ansi codes unless noted
 const DEFAULTS = {
@@ -33,8 +34,8 @@ const DEFAULTS = {
   dim: 242,
   bar_width: 20,
   show_usage: true,
-  show_resets: false,
-  cache_ttl: 60,
+  show_resets: true,
+  cache_ttl: 150,
 };
 
 // maps api response keys to display labels, null buckets are skipped
@@ -141,8 +142,18 @@ function fetchUsage(token) {
       let body = "";
       res.on("data", (chunk) => (body += chunk));
       res.on("end", () => {
+        if (res.statusCode !== 200) {
+          resolve(null);
+          return;
+        }
         try {
-          resolve(JSON.parse(body));
+          const parsed = JSON.parse(body);
+          // reject responses that contain an error field
+          if (parsed.error) {
+            resolve(null);
+            return;
+          }
+          resolve(parsed);
         } catch {
           resolve(null);
         }
@@ -167,6 +178,14 @@ function readUsageCache() {
 
 function writeUsageCache(data) {
   saveJson(USAGE_CACHE_PATH, { fetched_at: Date.now() / 1000, data });
+  // persist last known good response for long term fallback
+  saveJson(USAGE_GOOD_PATH, { fetched_at: Date.now() / 1000, data });
+}
+
+function readLastGoodUsage() {
+  const cache = loadJson(USAGE_GOOD_PATH, null);
+  if (!cache || !cache.data) return null;
+  return cache.data;
 }
 
 async function refreshUsage(staleData, staleAge) {
@@ -189,6 +208,7 @@ async function refreshUsage(staleData, staleAge) {
 
 async function getUsageData(cfg) {
   // returns cached data instantly or refreshes asynchronously with a 2s timeout
+  // falls back to last known good data if everything else fails
   if (!cfg.show_usage) return null;
 
   const ttl = cfg.cache_ttl || CACHE_TTL_SECONDS;
@@ -200,8 +220,10 @@ async function getUsageData(cfg) {
   const refresh = refreshUsage(cachedData, age);
   const data = await Promise.race([refresh, timeout]);
 
-  if (!data && cachedData && age < CACHE_GRACE_SECONDS) return cachedData;
-  return data;
+  if (data) return data;
+  if (cachedData && age < CACHE_GRACE_SECONDS) return cachedData;
+  // all short term caches failed, use last known good response
+  return readLastGoodUsage();
 }
 
 function fmtResetTime(resetsAtStr) {
@@ -251,11 +273,38 @@ function renderUsageLine(usageData, cfg) {
   return " " + segments.join(dot);
 }
 
+function findGitDir(startDir) {
+  // walk up the directory tree to find .git, handles subdirectories
+  let dir = startDir;
+  const root = path.parse(dir).root;
+  while (dir !== root) {
+    const gitPath = path.join(dir, ".git");
+    try {
+      const stat = fs.statSync(gitPath);
+      if (stat.isDirectory()) return gitPath;
+      // worktree: .git is a file containing "gitdir: <path>"
+      if (stat.isFile()) {
+        const content = fs.readFileSync(gitPath, "utf-8").trim();
+        if (content.startsWith("gitdir: ")) return content.slice(8);
+      }
+    } catch {
+      // not found at this level, keep walking up
+    }
+    dir = path.dirname(dir);
+  }
+  return null;
+}
+
 function getGitBranch() {
-  // reads .git/HEAD directly instead of spawning git process
+  // walks up from cwd to find .git, reads HEAD for branch name
   try {
-    const head = fs.readFileSync(path.join(process.cwd(), ".git", "HEAD"), "utf-8").trim();
-    return head.startsWith("ref: refs/heads/") ? head.slice(16) : null;
+    const gitDir = findGitDir(process.cwd());
+    if (!gitDir) return null;
+    const head = fs.readFileSync(path.join(gitDir, "HEAD"), "utf-8").trim();
+    if (head.startsWith("ref: refs/heads/")) return head.slice(16);
+    // detached head, show short hash so user knows they're not on a branch
+    if (head.length >= 7) return "detached-" + head.slice(0, 7);
+    return null;
   } catch {
     return null;
   }
