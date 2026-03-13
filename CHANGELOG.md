@@ -1,5 +1,8 @@
 # Changelog
 
+## 1.1.2
+- add `--version` / `-v` flag to CLI
+
 ## 1.1.1
 - fix rate limit line disappearing when API returns errors
 - fix git branch not showing from subdirectories

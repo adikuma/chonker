@@ -24,7 +24,15 @@ function saveSettings(settings) {
   fs.writeFileSync(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n");
 }
 
+const pkg = require("../package.json");
+
 function main() {
+  const arg = process.argv[2];
+  if (arg === "--version" || arg === "-v") {
+    console.log(pkg.version);
+    return;
+  }
+
   // copy meter.js to ~/.chonker/ so it persists after npx cleans up
   fs.mkdirSync(CHONKER_DIR, { recursive: true });
   fs.copyFileSync(METER_SRC, METER_DEST);
