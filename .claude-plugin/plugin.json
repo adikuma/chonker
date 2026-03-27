@@ -1,5 +1,5 @@
 {
   "name": "chonker",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "real-time context window meter showing token usage, rate limits, and remaining capacity"
 }

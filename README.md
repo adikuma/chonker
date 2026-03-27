@@ -8,10 +8,11 @@ Claude Code says 200K tokens but the real usable limit is somewhere around 70-12
 - Input and output tokens with model name
 - Real time rate limit utilization (5 hour session, 7 day weekly, model specific, extra usage)
 - Current git branch
+- Burn rate: how fast you are consuming your 5h rate limit (`0.0%/min` when idle, lights up when you are actively burning)
 
 ## What it looks like
 
-![chonker meter](images/chonker.png?v=4)
+![chonker meter](images/chonker.png?v=5)
 
 ## Install
 
@@ -43,7 +44,7 @@ flowchart LR
     GIT[.git/HEAD] -->|branch name| M
     M -->|HTTP GET every 2.5 min| API[Anthropic Usage API]
     API -->|rate limit data| M
-    M -->|3 lines of text| SL[status line footer]
+    M -->|4 lines of text| SL[status line footer]
 
     subgraph cache
         UC["usage.json<br/>(short lived)"]
@@ -59,6 +60,8 @@ flowchart LR
 **Line 1** (progress bar, token count) and **Line 2** (input/output tokens, model, branch) update every 5 seconds. This data comes straight from Claude Code through the pipe so it is always real time.
 
 **Line 3** (rate limits) comes from the Anthropic usage API. This is a network call so it is cached to keep things fast and avoid getting rate limited by the endpoint itself.
+
+**Line 4** (burn rate) tracks how fast your 5h rate limit is being consumed. It compares successive API snapshots every 2.5 minutes and computes `%/min`. Shows `0.0%/min` dimmed when usage is flat, and lights up in teal when you are actively burning. Appears after the first two API cycles (~5 min after start).
 
 ## Caching
 

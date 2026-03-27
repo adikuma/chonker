@@ -1,8 +1,14 @@
 # Changelog
 
+## 1.2.1
+- fix: restore all-bucket rate limit line (5h, 7d, sonnet) — was accidentally dropped in 1.2.0
+- burn rate now shows as a persistent 4th line (`0.0%/min` dimmed when idle, teal when burning)
+- remove cap/safe/eta suffix — just the raw burn rate number
+- fix: saveJson leaves no orphaned .tmp files on write failure (windows)
+- fix: getVelocities called with explicit 600s expiry
+
 ## 1.2.0
 - add burn rate prediction: shows `burn: X%/min · cap ~Ym` when rate limit usage is climbing
-- simplify rate limit line to show only 5h bucket
 - show "safe" in green when usage won't hit cap before reset
 - prediction appears after 2 API cycles (~5 min) for stable readings
 - velocity data expires after 10 min of inactivity

@@ -71,7 +71,12 @@ function saveJson(filePath, data) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = filePath + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(data));
-  fs.renameSync(tmp, filePath);
+  try {
+    fs.renameSync(tmp, filePath);
+  } catch {
+    try { fs.unlinkSync(tmp); } catch {}
+    throw new Error(`saveJson: failed to write ${filePath}`);
+  }
 }
 
 function loadConfig() {
@@ -228,8 +233,8 @@ function computeAndSaveVelocity(usageData) {
   for (const [apiKey] of USAGE_BUCKETS) {
     const cur = current[apiKey];
     const old = prev.buckets[apiKey];
-    if (cur != null && old != null && cur > old) {
-      velocities[apiKey] = (cur - old) / elapsed;
+    if (cur != null && old != null) {
+      velocities[apiKey] = cur > old ? (cur - old) / elapsed : 0;
     }
   }
 
@@ -315,22 +320,32 @@ function renderUsageLine(usageData, cfg) {
   if (!usageData) return null;
 
   const dim = c256(cfg.dim);
+  const showResets = cfg.show_resets || false;
   const dot = ` ${dim}\u00b7${RESET} `;
+  const segments = [];
 
-  // show only the 5h bucket
-  const bucket = usageData.five_hour;
-  if (!bucket) return null;
-
-  const pct = bucket.utilization || 0;
-  const color = pickBarColor(pct, cfg);
-  let line = ` ${dim}5h:${RESET}${color}${Math.round(pct)}%${RESET}`;
-
-  if (cfg.show_resets) {
-    const rst = fmtResetTime(bucket.resets_at);
-    if (rst) line += `${dot}${dim}resets ${rst}${RESET}`;
+  for (const [apiKey, label] of USAGE_BUCKETS) {
+    const bucket = usageData[apiKey];
+    if (!bucket) continue;
+    const pct = bucket.utilization || 0;
+    const color = pickBarColor(pct, cfg);
+    let seg = `${dim}${label}:${RESET}${color}${Math.round(pct)}%${RESET}`;
+    if (showResets) {
+      const rst = fmtResetTime(bucket.resets_at);
+      if (rst) seg += ` ${dim}${rst}${RESET}`;
+    }
+    segments.push(seg);
   }
 
-  return line;
+  const extra = usageData.extra_usage;
+  if (extra && extra.is_enabled) {
+    const pct = extra.utilization || 0;
+    const color = pickBarColor(pct, cfg);
+    segments.push(`${dim}xtra:${RESET}${color}${Math.round(pct)}%${RESET}`);
+  }
+
+  if (!segments.length) return null;
+  return " " + segments.join(dot);
 }
 
 function renderPredictionLine(usageData, cfg, velocities) {
@@ -338,28 +353,11 @@ function renderPredictionLine(usageData, cfg, velocities) {
 
   const bucket = usageData.five_hour;
   const velocity = velocities.five_hour;
-  if (!bucket || !velocity) return null;
+  if (!bucket || velocity == null) return null;
 
-  const pct = bucket.utilization || 0;
   const dim = c256(cfg.dim);
-  const teal = c256(37);
-  const dot = ` ${dim}\u00b7${RESET} `;
-
-  let line = ` ${dim}burn:${RESET} ${teal}${velocity.toFixed(1)}%/min${RESET}`;
-
-  const eta = fmtEta(pct, velocity, cfg.prediction_horizon || 3);
-  if (eta) {
-    const remaining = (100 - pct) / velocity;
-    let etaColor;
-    if (remaining < 3) etaColor = c256(cfg.critical);
-    else if (remaining < 10) etaColor = c256(cfg.danger);
-    else etaColor = c256(cfg.warning);
-    line += `${dot}${etaColor}cap ${eta}${RESET}`;
-  } else {
-    line += `${dot}${c256(70)}safe${RESET}`;
-  }
-
-  return line;
+  const color = velocity === 0 ? c256(cfg.dim) : c256(37);
+  return ` ${dim}burn:${RESET} ${color}${velocity.toFixed(1)}%/min${RESET}`;
 }
 
 function findGitDir(startDir) {
@@ -452,7 +450,7 @@ async function render(data) {
   const line2 = line2Parts.join(dot);
 
   const usageData = await getUsageData(cfg);
-  const velocities = usageData ? getVelocities() : null;
+  const velocities = usageData ? getVelocities(600) : null;
   const line3 = renderUsageLine(usageData, cfg);
   const line4 = renderPredictionLine(usageData, cfg, velocities);
 
