@@ -10,6 +10,8 @@ const CONFIG_PATH = path.join(CHONKER_DIR, "config.json");
 const SESSION_PATH = path.join(CHONKER_DIR, "session.json");
 const USAGE_CACHE_PATH = path.join(CHONKER_DIR, "usage.json");
 const USAGE_GOOD_PATH = path.join(CHONKER_DIR, "usage_good.json");
+const VELOCITY_PATH = path.join(CHONKER_DIR, "velocity.json");
+const VELOCITIES_PATH = path.join(CHONKER_DIR, "velocities.json");
 const CREDENTIALS_PATH = path.join(os.homedir(), ".claude", ".credentials.json");
 
 const USAGE_API_URL = "https://api.anthropic.com/api/oauth/usage";
@@ -36,6 +38,16 @@ const DEFAULTS = {
   show_usage: true,
   show_resets: true,
   cache_ttl: 150,
+  // context bar color thresholds (percentage)
+  threshold_warning: 50,
+  threshold_danger: 70,
+  threshold_critical: 85,
+  // compact awareness
+  compact_enabled: false,
+  compact_threshold: 0,
+  // burn rate prediction
+  show_predictions: true,
+  prediction_horizon: 3,
 };
 
 // maps api response keys to display labels, null buckets are skipped
@@ -71,9 +83,12 @@ function c256(n) {
 }
 
 function pickBarColor(pct, cfg) {
-  if (pct > 85) return c256(cfg.critical);
-  if (pct > 70) return c256(cfg.danger);
-  if (pct > 50) return c256(cfg.warning);
+  const critical = cfg.threshold_critical || 85;
+  const danger = cfg.threshold_danger || 70;
+  const warning = cfg.threshold_warning || 50;
+  if (pct > critical) return c256(cfg.critical);
+  if (pct > danger) return c256(cfg.danger);
+  if (pct > warning) return c256(cfg.warning);
   return c256(cfg.normal);
 }
 
@@ -180,12 +195,68 @@ function writeUsageCache(data) {
   saveJson(USAGE_CACHE_PATH, { fetched_at: Date.now() / 1000, data });
   // persist last known good response for long term fallback
   saveJson(USAGE_GOOD_PATH, { fetched_at: Date.now() / 1000, data });
+  // compute burn rate when fresh data arrives
+  computeAndSaveVelocity(data);
 }
 
 function readLastGoodUsage() {
   const cache = loadJson(USAGE_GOOD_PATH, null);
   if (!cache || !cache.data) return null;
   return cache.data;
+}
+
+// velocity tracking - called only when fresh api data arrives (~every 2.5 min)
+function computeAndSaveVelocity(usageData) {
+  const prev = loadJson(VELOCITY_PATH, null);
+  const now = Date.now() / 1000;
+
+  const current = {};
+  for (const [apiKey] of USAGE_BUCKETS) {
+    const bucket = usageData[apiKey];
+    if (bucket) current[apiKey] = bucket.utilization || 0;
+  }
+
+  const samples = (prev && prev.samples) ? prev.samples + 1 : 1;
+  saveJson(VELOCITY_PATH, { ts: now, buckets: current, samples });
+
+  // need previous data and at least 1 min elapsed
+  if (!prev || !prev.ts || !prev.buckets) return;
+  const elapsed = (now - prev.ts) / 60;
+  if (elapsed < 1) return;
+
+  const velocities = {};
+  for (const [apiKey] of USAGE_BUCKETS) {
+    const cur = current[apiKey];
+    const old = prev.buckets[apiKey];
+    if (cur != null && old != null && cur > old) {
+      velocities[apiKey] = (cur - old) / elapsed;
+    }
+  }
+
+  if (Object.keys(velocities).length > 0) {
+    saveJson(VELOCITIES_PATH, { ts: now, samples, velocities });
+  }
+}
+
+// reads pre-computed velocities, returns null if stale or too few samples
+function getVelocities(maxAgeSec) {
+  const data = loadJson(VELOCITIES_PATH, null);
+  if (!data || !data.ts || !data.velocities) return null;
+  if (Date.now() / 1000 - data.ts > (maxAgeSec || 600)) return null;
+  if ((data.samples || 0) < 2) return null;
+  return data.velocities;
+}
+
+function fmtEta(pct, velocity, maxHours) {
+  if (!velocity || velocity <= 0) return null;
+  const remaining = (100 - pct) / velocity;
+  if (remaining <= 0 || remaining > maxHours * 60) return null;
+  if (remaining >= 60) {
+    const h = Math.floor(remaining / 60);
+    const m = Math.round(remaining % 60);
+    return m > 0 ? `~${h}h${m}m` : `~${h}h`;
+  }
+  return `~${Math.round(Math.max(1, remaining))}m`;
 }
 
 async function refreshUsage(staleData, staleAge) {
@@ -244,33 +315,51 @@ function renderUsageLine(usageData, cfg) {
   if (!usageData) return null;
 
   const dim = c256(cfg.dim);
-  const showResets = cfg.show_resets || false;
   const dot = ` ${dim}\u00b7${RESET} `;
-  const segments = [];
 
-  for (const [apiKey, label] of USAGE_BUCKETS) {
-    const bucket = usageData[apiKey];
-    if (!bucket) continue;
-    const pct = bucket.utilization || 0;
-    const color = pickBarColor(pct, cfg);
-    let seg = `${dim}${label}:${RESET}${color}${Math.round(pct)}%${RESET}`;
-    if (showResets) {
-      const rst = fmtResetTime(bucket.resets_at);
-      if (rst) seg += ` ${dim}${rst}${RESET}`;
-    }
-    segments.push(seg);
+  // show only the 5h bucket
+  const bucket = usageData.five_hour;
+  if (!bucket) return null;
+
+  const pct = bucket.utilization || 0;
+  const color = pickBarColor(pct, cfg);
+  let line = ` ${dim}5h:${RESET}${color}${Math.round(pct)}%${RESET}`;
+
+  if (cfg.show_resets) {
+    const rst = fmtResetTime(bucket.resets_at);
+    if (rst) line += `${dot}${dim}resets ${rst}${RESET}`;
   }
 
-  // extra usage has a different structure with is_enabled and monthly_limit
-  const extra = usageData.extra_usage;
-  if (extra && extra.is_enabled) {
-    const pct = extra.utilization || 0;
-    const color = pickBarColor(pct, cfg);
-    segments.push(`${dim}xtra:${RESET}${color}${Math.round(pct)}%${RESET}`);
+  return line;
+}
+
+function renderPredictionLine(usageData, cfg, velocities) {
+  if (!usageData || !velocities || !cfg.show_predictions) return null;
+
+  const bucket = usageData.five_hour;
+  const velocity = velocities.five_hour;
+  if (!bucket || !velocity) return null;
+
+  const pct = bucket.utilization || 0;
+  const dim = c256(cfg.dim);
+  const teal = c256(37);
+  const dot = ` ${dim}\u00b7${RESET} `;
+
+  let line = ` ${dim}burn:${RESET} ${teal}${velocity.toFixed(1)}%/min${RESET}`;
+
+  const eta = fmtEta(pct, velocity, cfg.prediction_horizon || 3);
+  if (eta) {
+    const remaining = (100 - pct) / velocity;
+    let etaColor;
+    if (remaining < 3) etaColor = c256(cfg.critical);
+    else if (remaining < 10) etaColor = c256(cfg.danger);
+    else etaColor = c256(cfg.warning);
+    line += `${dot}${etaColor}cap ${eta}${RESET}`;
+  } else {
+    line += `${dot}${c256(70)}safe${RESET}`;
   }
 
-  if (!segments.length) return null;
-  return " " + segments.join(dot);
+  return line;
 }
 
 function findGitDir(startDir) {
@@ -340,7 +429,20 @@ async function render(data) {
   const bar = buildBar(pct, barColor, dim, cfg.bar_width);
   const dot = ` ${dim}\u00b7${RESET} `;
 
-  const line1 = ` ${bar} ${barColor}${Math.round(pct)}%${RESET}  ${tokColor}${fmtTokens(currentTok)}/${fmtTokens(windowSize)}${RESET}`;
+  // compact warning: show when approaching the configured compact threshold
+  let compactTag = "";
+  if (cfg.compact_enabled && cfg.compact_threshold > 0) {
+    const ct = cfg.compact_threshold;
+    if (pct >= ct) {
+      // at or past threshold — urgent flash
+      compactTag = ` ${c256(cfg.critical)}\u26a0 /compact${RESET}`;
+    } else if (pct >= ct - 10) {
+      // within 10% of threshold — early warning
+      compactTag = ` ${c256(cfg.warning)}${dim}\u2192 compact@${ct}%${RESET}`;
+    }
+  }
+
+  const line1 = ` ${bar} ${barColor}${Math.round(pct)}%${RESET}  ${tokColor}${fmtTokens(currentTok)}/${fmtTokens(windowSize)}${RESET}${compactTag}`;
   const branch = getGitBranch();
   const line2Parts = [
     ` ${dim}\u2191${RESET}${accent}${fmtTokens(inputTok)} ${dim}\u2193${RESET}${accent}${fmtTokens(outputTok)}`,
@@ -350,10 +452,14 @@ async function render(data) {
   const line2 = line2Parts.join(dot);
 
   const usageData = await getUsageData(cfg);
+  const velocities = usageData ? getVelocities() : null;
   const line3 = renderUsageLine(usageData, cfg);
+  const line4 = renderPredictionLine(usageData, cfg, velocities);
 
-  if (line3) return `${line1}\n${line2}\n${line3}`;
-  return `${line1}\n${line2}`;
+  const lines = [line1, line2];
+  if (line3) lines.push(line3);
+  if (line4) lines.push(line4);
+  return lines.join("\n");
 }
 
 async function main() {

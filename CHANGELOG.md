@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.2.0
+- add burn rate prediction: shows `burn: X%/min · cap ~Ym` when rate limit usage is climbing
+- simplify rate limit line to show only 5h bucket
+- show "safe" in green when usage won't hit cap before reset
+- prediction appears after 2 API cycles (~5 min) for stable readings
+- velocity data expires after 10 min of inactivity
+
 ## 1.1.2
 - add `--version` / `-v` flag to CLI
 
